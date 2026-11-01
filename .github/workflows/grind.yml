@@ -3,15 +3,15 @@ on:
   workflow_dispatch:
     inputs:
       start:
-        description: absolute start index
         required: true
       span:
-        description: total keys to cover
         required: true
       prefix:
-        description: base58 prefix
         required: false
         default: pwndL
+      scheme:
+        required: false
+        default: le32
 
 permissions:
   contents: write
@@ -37,8 +37,9 @@ jobs:
           START: ${{ inputs.start }}
           SPAN: ${{ inputs.span }}
           PREFIX: ${{ inputs.prefix }}
+          SCHEME: ${{ inputs.scheme }}
           SLICE: ${{ matrix.slice }}
-          TAG: ${{ github.run_id }}-${{ matrix.slice }}
+          TAG: ${{ github.run_id }}-${{ inputs.scheme }}-${{ matrix.slice }}
         run: |
           CHUNK=$(( SPAN / 20 ))
           LO=$(( START + SLICE * CHUNK ))
@@ -48,12 +49,12 @@ jobs:
             CNT=$CHUNK
           fi
           Q=$(( CNT / 4 ))
-          echo "slice $SLICE $LO +$CNT"
+          echo "slice $SLICE $LO +$CNT scheme $SCHEME"
           for k in 0 1 2 3; do
             L2=$(( LO + k * Q ))
             N2=$Q
             if [ "$k" = "3" ]; then N2=$(( CNT - 3 * Q )); fi
-            ./grindc "$L2" "$N2" "$TAG-$k" "$PREFIX" &
+            ./grindc "$L2" "$N2" "$TAG-$k" "$PREFIX" "$SCHEME" &
           done
           wait
           mkdir -p out

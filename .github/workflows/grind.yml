@@ -1,0 +1,70 @@
+name: grind
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: absolute start index
+        required: true
+      span:
+        description: total keys to cover
+        required: true
+      prefix:
+        description: base58 prefix
+        required: false
+        default: pwndL
+
+permissions:
+  contents: write
+
+jobs:
+  grind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        slice: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libsodium-dev gcc
+          gcc -O3 -o grindc grindc.c -lsodium
+      - name: run
+        env:
+          START: ${{ inputs.start }}
+          SPAN: ${{ inputs.span }}
+          PREFIX: ${{ inputs.prefix }}
+          SLICE: ${{ matrix.slice }}
+          TAG: ${{ github.run_id }}-${{ matrix.slice }}
+        run: |
+          CHUNK=$(( SPAN / 20 ))
+          LO=$(( START + SLICE * CHUNK ))
+          if [ "$SLICE" = "19" ]; then
+            CNT=$(( START + SPAN - LO ))
+          else
+            CNT=$CHUNK
+          fi
+          Q=$(( CNT / 4 ))
+          echo "slice $SLICE $LO +$CNT"
+          for k in 0 1 2 3; do
+            L2=$(( LO + k * Q ))
+            N2=$Q
+            if [ "$k" = "3" ]; then N2=$(( CNT - 3 * Q )); fi
+            ./grindc "$L2" "$N2" "$TAG-$k" "$PREFIX" &
+          done
+          wait
+          mkdir -p out
+          cat hits_* 2>/dev/null | sort -u > "out/$TAG.txt" || true
+          echo "lines: $(wc -l < out/$TAG.txt || echo 0)"
+          cat "out/$TAG.txt" || true
+          if [ -s "out/$TAG.txt" ]; then
+            git config user.name grindbot
+            git config user.email grind@example.com
+            git add "out/$TAG.txt"
+            git commit -q -m "hit $TAG" || true
+            git pull --rebase -q || true
+            git push || true
+          fi

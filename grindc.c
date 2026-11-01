@@ -39,6 +39,12 @@ int main(int argc, char **argv) {
     if (sodium_init() < 0) return 1;
     if (argc < 4) { fprintf(stderr, "usage: %s start count [tag] [prefix]\n", argv[0]); return 1; }
     const char *prefix = argc > 4 ? argv[4] : "pwndL";
+    const char *scheme = argc > 5 ? argv[5] : "le32";
+    int off = 0, be = 0;
+    if (!strcmp(scheme, "be32")) { off = 28; be = 1; }
+    else if (!strncmp(scheme, "off", 3)) { off = atoi(scheme + 3); }
+    else if (!strcmp(scheme, "le32")) { off = 0; }
+    else { fprintf(stderr, "bad scheme\n"); return 1; }
     char lo[64], hi[64];
     int pl = strlen(prefix);
     memcpy(lo, prefix, pl); memset(lo + pl, '1', 43 - pl); lo[43 - pl + pl] = 0;
@@ -54,11 +60,14 @@ int main(int argc, char **argv) {
     uint64_t done = 0, nextprog = 100000;
 
     for (uint64_t i = start; i < start + count; i++) {
-        memcpy(seed, &i, 8); memset(seed + 8, 0, 24);
+        uint32_t iv = (uint32_t)i;
+        memset(seed, 0, 32);
+        if (be) { seed[off] = (iv >> 24) & 0xff; seed[off+1] = (iv >> 16) & 0xff; seed[off+2] = (iv >> 8) & 0xff; seed[off+3] = iv & 0xff; }
+        else { seed[off] = iv & 0xff; seed[off+1] = (iv >> 8) & 0xff; seed[off+2] = (iv >> 16) & 0xff; seed[off+3] = (iv >> 24) & 0xff; }
         crypto_sign_seed_keypair(pk, sk, seed);
         if (memcmp(pk, LOB, 32) >= 0 && memcmp(pk, HIB, 32) <= 0) {
             char b58[64]; b58enc_c(b58, pk, 32);
-            fprintf(out, "%s\tle32\t%llu\t", b58, (unsigned long long)i);
+            fprintf(out, "%s\t%s\t%llu\t", b58, scheme, (unsigned long long)i);
             for (int k = 0; k < 32; k++) fprintf(out, "%02x", seed[k]);
             fprintf(out, "\n"); fflush(out);
         }
